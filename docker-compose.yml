@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  estoque-db:
+    image: postgres:14
+    container_name: estoque-db
+    environment:
+      POSTGRES_USER: admin_estoque
+      POSTGRES_PASSWORD: "123"
+      POSTGRES_DB: estoque_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - estoque-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_estoque -d estoque_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  pedido-db:
+    image: postgres:14
+    container_name: pedido-db
+    environment:
+      POSTGRES_USER: admin_pedido
+      POSTGRES_PASSWORD: "123"
+      POSTGRES_DB: pedido_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pedido-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin_pedido -d pedido_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8001:8000"
+    environment:
+      JWT_SECRET: "chave-secreta-compartilhada-do-projeto"
+
+  estoque-service:
+    build: ./estoque-service
+    ports:
+      - "8002:8000"
+    environment:
+      DATABASE_URL: "postgresql://admin_estoque:123@estoque-db:5432/estoque_db"
+    depends_on:
+      estoque-db:
+        condition: service_healthy
+
+  pedido-service:
+    build: ./pedido-service
+    ports:
+      - "8003:8000"
+    environment:
+      ESTOQUE_SERVICE_URL: "http://estoque-service:8000"
+      DATABASE_URL: "postgresql://admin_pedido:123@pedido-db:5432/pedido_db"
+    depends_on:
+      pedido-db:
+        condition: service_healthy
+      estoque-service:
+        condition: service_started
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"  # a porta interna do container é 8080 (ver Dockerfile: EXPOSE 8080 / uvicorn --port 8080)
+    environment:
+      AUTH_SERVICE_URL: "http://auth-service:8000"
+      PEDIDO_SERVICE_URL: "http://pedido-service:8000"
+      ESTOQUE_SERVICE_URL: "http://estoque-service:8000"
+    depends_on:
+      - auth-service
+      - estoque-service
+      - pedido-service
+
+volumes:
+  estoque-db-data:
+  pedido-db-data:
